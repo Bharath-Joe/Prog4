@@ -1,3 +1,4 @@
+import os
 from os.path import exists
 
 BLOCKSIZE = 256
@@ -68,5 +69,7 @@ def writeBlock(disk, bNum, block):
 
 
 def closeDisk(disk):
+    fileName = diskToFile[disk][0]
     diskToFile[disk][1] = "closed"
+    os.remove(fileName)
     return 0

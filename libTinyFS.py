@@ -1,4 +1,6 @@
+from asyncore import write
 import os
+from datetime import datetime
 from libDisk import closeDisk, openDisk, readBlock, writeBlock, diskToFile
 # The very first Inode block (from super block) needs to have an associated data block.
 
@@ -12,6 +14,7 @@ free_blocks = {}    # {block # in disk : 0 or 1} where 0 = not free / 1 free
 inodeBlocks_to_dataBlocks = {}   # {block # : list of data block #s}
 fileDescriptor_to_Inode = {}    # {fd : associated inode}
 dataBlockSize = {}          #{block # : size}
+fd_to_time = {} # {fileDescriptor Number : [creation time, modification time, access time]}
 
 
 def writeSB(diskNum):
@@ -89,6 +92,7 @@ def tfs_open(name):
         return fD
     else:
         fileDescriptor += 1
+        fd_to_time[fileDescriptor] = [-1, -1, -1]
     # find free block in free_blocks and set that value
     for block in free_blocks.keys():
         if free_blocks[block] == 1:
@@ -97,7 +101,28 @@ def tfs_open(name):
             fileDescriptor_to_Inode[fileDescriptor] = block
             # create Inode number for file
             # write to Disk with "I" as first Byte
+            val, read_block = readBlock(1,1,"")
+            buffer = ""
+            for byte in read_block:
+                if chr(byte) != "#":
+                    buffer += chr(byte)
+                else:
+                    break
+            buffer += name + " "
             writeBlock(1, block, b"I")
+            now = datetime.now()
+            dt_string = now.strftime(" %m/%d/%Y %H:%M:%S")
+            fd_to_time[fileDescriptor][0] =  dt_string
+            val2, read_block2 = readBlock(1,block,"")
+            buffer2 = ""
+            for byte in read_block2:
+                if chr(byte) != "#":
+                    buffer2 += chr(byte)
+                else:
+                    break
+            buffer2 += dt_string
+            writeBlock(1, block, buffer2.encode('utf-8'))
+            writeBlock(1, 1, buffer.encode('utf-8'))
             filePointer_table[fileDescriptor] = 0
             free = True
             break
@@ -154,6 +179,20 @@ def tfs_write(fileDescriptor, buffer, size):
         if free == False:
             print("ERROR: Not enough blocks available to write to file")
             return(-1)
+    inode = fileDescriptor_to_Inode[fileDescriptor]
+    now = datetime.now()
+    dt_string = now.strftime(" %m/%d/%Y %H:%M:%S")
+    fd_to_time[fileDescriptor][1] = dt_string
+    val, read_block = readBlock(1,inode,"")
+    buffer2 = ""
+    for byte in read_block:
+        if chr(byte) != "#":
+            buffer2 += chr(byte)
+        else:
+            break
+    buffer2 += dt_string
+    writeBlock(1, inode, buffer2.encode('utf-8'))
+    
     print("\n--- Written '%s' to file %s successfully ---"%(buffer, file_table[fileDescriptor]))
     return 0
 
@@ -161,10 +200,26 @@ def tfs_delete(fileDescriptor):
     if fileDescriptor not in file_table.keys() and fileDescriptor not in closed_file_table.values():
         print("ERROR: File descriptor not found")
         return -1
+    val, read_block = readBlock(1,1,"")
+    deleted_file = ""
+    if fileDescriptor in file_table.keys():
+        deleted_file = file_table[fileDescriptor]
+    elif fileDescriptor in closed_file_table.values():
+        for filename in closed_file_table.keys():
+            if closed_file_table[filename] == fileDescriptor:
+                deleted_file = filename
+                break
+    str_read_block = ""
+    for byte in read_block:
+        str_read_block += chr(byte)
+    str_read_block = str_read_block.replace(deleted_file + " ", len(deleted_file) * "#")
+    writeBlock(1, 1, str_read_block.encode('utf-8'))
     myFileName = ""
     for name in closed_file_table.keys():
         if closed_file_table[name] == fileDescriptor:
             myFileName = name
+    inode = fileDescriptor_to_Inode[fileDescriptor]
+    writeBlock(1, inode, b"#" * 256)
     # remove from our file_table
     # set the iNode Block to Free Block
     free_blocks[fileDescriptor_to_Inode[fileDescriptor]] = 1
@@ -198,6 +253,21 @@ def tfs_readByte(fileDescriptor, buffer):
         return -1
     val, myBuffer = readBlock(1, dataBlockNum, buffer)
     filePointer_table[fileDescriptor] += 1
+
+    inode = fileDescriptor_to_Inode[fileDescriptor]
+    now = datetime.now()
+    dt_string = now.strftime(" %m/%d/%Y %H:%M:%S")
+    val2, read_block2 = readBlock(1,inode,"")
+    buffer2 = ""
+    for byte in read_block2:
+        if chr(byte) != "#":
+            buffer2 += chr(byte)
+        else:
+            break
+    buffer2 += dt_string
+    writeBlock(1, inode, buffer2.encode('utf-8'))
+    fd_to_time[fileDescriptor][2] = dt_string
+
     print("\n--- Successfully read byte from %s file ---"%(file_table[fileDescriptor]))
     print("- Byte read:", chr(myBuffer[location]))
     return chr(myBuffer[location])
@@ -213,3 +283,55 @@ def tfs_seek(fileDescriptor, offset):
     filePointer_table[fileDescriptor] = offset
     print("\n--- Successfully seeked to offest in %s file ---"%(file_table[fileDescriptor]))
     return 0
+
+# Optional Functionality B: ---------------------
+
+#   tfs_rename -> renames a file
+def tfs_rename(old_filename, new_filename):
+    if old_filename in file_table.values(): # if old_filename is a current open file
+        for fd in file_table.keys():
+            if file_table[fd] == old_filename:
+                file_table[fd] = new_filename # replace old filename with new filename at corresponding fd
+                break
+    elif old_filename in closed_file_table.keys(): # if old_filename is a closed file
+        fd = closed_file_table[old_filename]
+        del closed_file_table[old_filename] # delete old filename
+        closed_file_table[new_filename] = fd # insert new filename with same fd as before
+    else: # if old_filename does not exist on disk
+        print("ERROR: file to rename does not exist")
+        return -1
+
+    val, read_block = readBlock(1,1,"")
+    str_read_block = ""
+    for byte in read_block:
+        str_read_block += chr(byte)
+    str_read_block = str_read_block.replace(old_filename, new_filename)
+    writeBlock(1, 1, str_read_block.encode('utf-8'))
+    return 0 # return 0 on success
+
+#   tfs_readdir -> lists all files and directories on disk
+def tfs_readdir():
+    if len(file_table) == 0 and len(closed_file_table) == 0:
+        print("No files or directories currently on disk")
+    else:
+        print("Directories on disk: root directory")
+        print("Files on disk:")
+        for filename in file_table.values(): # print all open files
+            print(filename)
+        for filename in closed_file_table.keys(): # print all closed files
+            print(filename)
+
+# End of Optional Functionality B: -----------------
+
+
+# Optional Functionality E: ---------------------
+
+#   tfs_stat(fileDescriptor) -> returns file creation time
+def tfs_stat(fileDescriptor):
+    print()
+    print("Timestamps for fileDescriptor: ", fileDescriptor)
+    print("Creation time:", fd_to_time[fileDescriptor][0])
+    print("Modification time:", fd_to_time[fileDescriptor][1])
+    print("Access time:", fd_to_time[fileDescriptor][2])
+
+# End of Optional Functionality E: -----------------

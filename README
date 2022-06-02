@@ -1,8 +1,18 @@
 Authors: Bharath S. and Ameya M.
 
+To run this program: python3 tinyFSDemo.py
+
 Our TinyFS implementation works well as we were able to implement all of the required features and 
-demonstrate that they work properly in our demo video.
+demonstrate that they work properly in our demo video. We have multiple demos to show a few out of
+the many edge cases possible for this project. There are a few bugs here and there, and this program 
+doesn't cover every single edge case. This program works on a high level and gets the job done. 
 
 For the two areas of additional functionality we chose to implement option B: renaming and listing all 
 files/directories on disk, and option e: timestamps for creation, modification, and access times for all 
-files. We also demonstrated these additional features in our demo video.
+files. We also demonstrated these additional features in our demo video. We've also shown that the times 
+are stored in the associated Inode block for that file in the order of creation, modification, access time.
+We also showed that the names of all files on this single-namespace directory is stored on the special Inode.
+
+One limitation/bug we have for this project is that once we write to a file, and write to the same file again
+with fewer number of characters compared to the first write, it doesn't write to the correct block, instead, it writes to the next block available. However, the direct indexing we have for data blocks as a mechanism for Inode
+blocks gets correctly updated, so that Inode for that file correctly points to the incorrect data block. 

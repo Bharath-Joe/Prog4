@@ -1,0 +1,8 @@
+Authors: Bharath S. and Ameya M.
+
+Our TinyFS implementation works well as we were able to implement all of the required features and 
+demonstrate that they work properly in our demo video.
+
+For the two areas of additional functionality we chose to implement option B: renaming and listing all 
+files/directories on disk, and option e: timestamps for creation, modification, and access times for all 
+files. We also demonstrated these additional features in our demo video.
